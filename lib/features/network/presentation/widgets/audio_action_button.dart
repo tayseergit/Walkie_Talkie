@@ -3,47 +3,78 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../audio_stream/presentation/cubit/audio_stream_cubit.dart';
 import '../../../audio_stream/presentation/cubit/audio_stream_state.dart';
 
-class AudioActionButton extends StatelessWidget {
+class AudioActionButton extends StatefulWidget {
   const AudioActionButton({super.key});
 
   @override
+  State<AudioActionButton> createState() => _AudioActionButtonState();
+}
+
+class _AudioActionButtonState extends State<AudioActionButton> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return BlocBuilder<AudioStreamCubit, AudioStreamState>(
+    return BlocConsumer<AudioStreamCubit, AudioStreamState>(
+      listenWhen: (previous, current) {
+        return previous.status != current.status;
+      },
+      listener: (context, state) {
+        if (state.status == StreamStatus.recording) {
+          _pulseController.repeat(reverse: true);
+        } else {
+          _pulseController.reset();
+        }
+      },
       builder: (context, state) {
-        // Evaluate states linearly to abstract logic and represent purely via UI
         final isConnecting = state.status == StreamStatus.connecting;
-        final isRecording = state.status == StreamStatus.streaming;
+        final isRecording = state.status == StreamStatus.recording;
+        final isSending = state.status == StreamStatus.sending;
         final isConnected = state.status == StreamStatus.connected;
         
         Widget iconWidget;
         Color backgroundColor;
 
-        if (isConnecting) {
-          // Sending / Connecting (Loading indicator)
+        if (isConnecting || isSending) {
           iconWidget = const SizedBox(
             width: 28,
             height: 28,
             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
           );
-          backgroundColor = Colors.grey;
+          backgroundColor = isSending ? Colors.red.shade300 : Colors.grey;
         } else if (isRecording) {
-          // Recording => Show stop trigger
           iconWidget = const Icon(Icons.stop, color: Colors.white, size: 36);
           backgroundColor = Colors.red;
         } else if (isConnected) {
-          // Default/Ready => Show Mic trigger
           iconWidget = const Icon(Icons.mic, color: Colors.white, size: 36);
           backgroundColor = Colors.green;
         } else {
-          // Disconnected => Disabled state
           iconWidget = const Icon(Icons.mic_off, color: Colors.white, size: 36);
           backgroundColor = Colors.grey.shade400;
         }
 
         return GestureDetector(
           onTap: () {
-            // Drop input while safely negotiating streams
-            if (isConnecting) return;
+            if (isConnecting || isSending) return;
             
             if (!isConnected && !isRecording) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -58,29 +89,36 @@ class AudioActionButton extends StatelessWidget {
             
             final cubit = context.read<AudioStreamCubit>();
             if (isRecording) {
-              // Trigger stop recording natively
               cubit.stopMicrophoneStream();
             } else {
-              // Trigger capture and stream logically
               cubit.startMicrophoneStream();
             }
           },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            width: 76,
-            height: 76,
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: backgroundColor.withOpacity(0.5),
-                  blurRadius: 15,
-                  offset: const Offset(0, 6)
+          child: AnimatedBuilder(
+            animation: _pulseAnimation,
+            builder: (context, child) {
+              return Transform.scale(
+                scale: isRecording ? _pulseAnimation.value : 1.0,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: backgroundColor.withOpacity(isRecording ? 0.8 : 0.5),
+                        blurRadius: isRecording ? 25 * _pulseAnimation.value : 15,
+                        spreadRadius: isRecording ? 5 * _pulseAnimation.value : 0,
+                        offset: const Offset(0, 6)
+                      ),
+                    ]
+                  ),
+                  child: Center(child: iconWidget),
                 ),
-              ]
-            ),
-            child: Center(child: iconWidget),
+              );
+            },
           ),
         );
       },

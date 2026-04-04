@@ -1,6 +1,8 @@
 import 'package:comunicate/features/network/domain/models/network_device.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../features/audio_stream/domain/entities/audio_device.dart';
+import '../../../../features/audio_stream/presentation/cubit/audio_stream_cubit.dart';
 import '../cubit/network_cubit.dart';
 
 class DeviceTile extends StatelessWidget {
@@ -35,8 +37,16 @@ class DeviceTile extends StatelessWidget {
                 color: device.status == DeviceStatus.online ? Colors.green : Colors.red,
               ),
         onTap: () {
-          // Tap an item to re-test the connection dynamically
-          if (device.status != DeviceStatus.testing) {
+          // Tap an item to re-test the connection dynamically or connect if online
+          if (device.status == DeviceStatus.online) {
+            final audioDevice = AudioDevice(
+              id: device.ip,
+              name: 'Device ${device.ip.split('.').last}',
+              ip: device.ip,
+              status: AudioDeviceStatus.offline, 
+            );
+            context.read<AudioStreamCubit>().connectToDevice(audioDevice);
+          } else if (device.status != DeviceStatus.testing) {
             context.read<NetworkCubit>().addAndTestDevice(device.ip);
           }
         },

@@ -51,9 +51,13 @@ class AudioStreamScreen extends StatelessWidget {
         statusColor = Colors.green;
         statusText = 'Connection Established';
         break;
-      case StreamStatus.streaming:
+      case StreamStatus.recording:
         statusColor = Colors.redAccent;
         statusText = 'Live Broadcasting (Mic ON)';
+        break;
+      case StreamStatus.sending:
+        statusColor = Colors.orange;
+        statusText = 'Dispatching Output...';
         break;
       case StreamStatus.error:
         statusColor = Colors.red;
@@ -90,7 +94,7 @@ class AudioStreamScreen extends StatelessWidget {
   }
 
   Widget _buildModeSelection(BuildContext context, AudioStreamState state) {
-    if (state.status == StreamStatus.connected || state.status == StreamStatus.streaming) {
+    if (state.status == StreamStatus.connected || state.status == StreamStatus.recording || state.status == StreamStatus.sending) {
       return ElevatedButton.icon(
         icon: const Icon(Icons.stop_screen_share),
         label: const Text('Kill Connection'),
@@ -159,7 +163,7 @@ class AudioStreamScreen extends StatelessWidget {
   }
 
   Widget _buildStreamingControls(BuildContext context, AudioStreamState state) {
-    if (state.status != StreamStatus.connected && state.status != StreamStatus.streaming) {
+    if (state.status != StreamStatus.connected && state.status != StreamStatus.recording && state.status != StreamStatus.sending) {
       return const SizedBox.shrink();
     }
     
@@ -179,7 +183,7 @@ class AudioStreamScreen extends StatelessWidget {
       );
     }
 
-    final isStreaming = state.status == StreamStatus.streaming;
+    final isStreaming = state.status == StreamStatus.recording;
     
     return Column(
       children: [

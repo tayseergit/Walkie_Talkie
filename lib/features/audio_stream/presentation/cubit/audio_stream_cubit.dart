@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../domain/entities/audio_device.dart';
 import '../../domain/repositories/audio_stream_repository.dart';
 import 'audio_stream_state.dart';
@@ -60,9 +61,16 @@ class AudioStreamCubit extends Cubit<AudioStreamState> {
   /// Ignites microphone broadcasts over active socket
   Future<void> startMicrophoneStream() async {
     if (state.status != StreamStatus.connected) return;
+    
+    final permission = await Permission.microphone.request();
+    if (!permission.isGranted) {
+      emit(state.copyWith(status: StreamStatus.error, errorMessage: 'Microphone permission denied.'));
+      return;
+    }
+
     try {
       await _repository.startStreaming();
-      emit(state.copyWith(status: StreamStatus.streaming));
+      emit(state.copyWith(status: StreamStatus.recording));
     } catch (e) {
       emit(state.copyWith(status: StreamStatus.error, errorMessage: 'Mic injection failed: $e'));
     }
@@ -70,9 +78,12 @@ class AudioStreamCubit extends Cubit<AudioStreamState> {
 
   /// Severs microphone broadcast safely maintaining the TCP architecture
   Future<void> stopMicrophoneStream() async {
-    if (state.status != StreamStatus.streaming) return;
+    if (state.status != StreamStatus.recording) return;
+    
     try {
+      emit(state.copyWith(status: StreamStatus.sending));
       await _repository.stopStreaming();
+      await Future.delayed(const Duration(milliseconds: 600)); // Show sending feedback briefly
       emit(state.copyWith(status: StreamStatus.connected)); // Falls back seamlessly cleanly
     } catch (e) {
       emit(state.copyWith(status: StreamStatus.error, errorMessage: 'Stop disruption error: $e'));

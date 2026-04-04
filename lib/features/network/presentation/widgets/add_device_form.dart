@@ -10,7 +10,7 @@ class AddDeviceForm extends StatefulWidget {
 }
 
 class _AddDeviceFormState extends State<AddDeviceForm> {
-  final TextEditingController _ipController = TextEditingController();
+  final TextEditingController _ipController = TextEditingController(text: '192.168.');
 
   @override
   void dispose() {
@@ -40,7 +40,7 @@ class _AddDeviceFormState extends State<AddDeviceForm> {
             final ip = _ipController.text.trim();
             if (ip.isNotEmpty) {
               context.read<NetworkCubit>().addAndTestDevice(ip);
-              _ipController.clear();
+              _ipController.text = '192.168.';
               FocusScope.of(context).unfocus(); // Drops the keyboard
             }
           },

@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/audio_device.dart';
 
-enum StreamStatus { disconnected, connecting, connected, streaming, error }
+enum StreamStatus { disconnected, connecting, connected, recording, sending, error }
 
 class AudioStreamState extends Equatable {
   final StreamStatus status;
