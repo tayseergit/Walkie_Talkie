@@ -8,6 +8,7 @@ import 'audio_stream_state.dart';
 class AudioStreamCubit extends Cubit<AudioStreamState> {
   final AudioStreamRepository _repository;
   StreamSubscription<AudioDeviceStatus>? _connectionSubscription;
+  StreamSubscription<List<String>>? _deviceListSubscription;
   final int _audioPort = 6000; // Distinct networking route specifically structured for Audio TCP pipeline
 
   AudioStreamCubit({
@@ -23,11 +24,29 @@ class AudioStreamCubit extends Cubit<AudioStreamState> {
         emit(state.copyWith(
           status: StreamStatus.disconnected,
           errorMessage: 'Connection lost or terminated globally.',
+          connectedDevices: [],
+          selectedTargetIds: [],
         ));
       } else if (status == AudioDeviceStatus.online) {
         emit(state.copyWith(status: StreamStatus.connected, errorMessage: null));
       }
     });
+
+    _deviceListSubscription = _repository.deviceListStream.listen((devices) {
+      // Safely purge outdated targets from selection explicitly when connections sever gracefully 
+      final cleanSelection = state.selectedTargetIds.where((id) => devices.contains(id)).toList();
+      emit(state.copyWith(connectedDevices: devices, selectedTargetIds: cleanSelection));
+    });
+  }
+
+  void toggleTargetId(String id) {
+    final currentList = List<String>.from(state.selectedTargetIds);
+    if (currentList.contains(id)) {
+      currentList.remove(id);
+    } else {
+      currentList.add(id);
+    }
+    emit(state.copyWith(selectedTargetIds: currentList));
   }
 
   /// Start server so this device can receive incoming audio data efficiently
@@ -69,7 +88,8 @@ class AudioStreamCubit extends Cubit<AudioStreamState> {
     }
 
     try {
-      await _repository.startStreaming();
+      final targetRouting = state.selectedTargetIds.isEmpty ? 'all' : state.selectedTargetIds.join(',');
+      await _repository.startStreaming(toId: targetRouting);
       emit(state.copyWith(status: StreamStatus.recording));
     } catch (e) {
       emit(state.copyWith(status: StreamStatus.error, errorMessage: 'Mic injection failed: $e'));
@@ -102,6 +122,7 @@ class AudioStreamCubit extends Cubit<AudioStreamState> {
   @override
   Future<void> close() {
     _connectionSubscription?.cancel();
+    _deviceListSubscription?.cancel();
     _repository.stopReceiver();
     return super.close();
   }

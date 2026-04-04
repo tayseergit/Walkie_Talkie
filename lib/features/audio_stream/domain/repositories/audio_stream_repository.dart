@@ -8,8 +8,8 @@ abstract class AudioStreamRepository {
   /// Formally disconnects from the current device socket
   Future<void> disconnect();
 
-  /// Captures PCM microphone data and pushes it over the raw socket pipeline
-  Future<void> startStreaming();
+  /// Captures PCM microphone data and pushes it over the raw socket pipeline explicitly
+  Future<void> startStreaming({String toId = 'all'});
   
   /// Pauses microphone broadcasting
   Future<void> stopStreaming();
@@ -22,4 +22,7 @@ abstract class AudioStreamRepository {
 
   /// Publishes underlying connectivity transitions cleanly
   Stream<AudioDeviceStatus> get connectionStatusStream;
+
+  /// Exposes the live dynamic cluster of actively targeted devices within the Hub
+  Stream<List<String>> get deviceListStream;
 }

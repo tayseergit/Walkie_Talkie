@@ -8,12 +8,16 @@ class AudioStreamState extends Equatable {
   final AudioDevice? targetDevice;
   final String? errorMessage;
   final bool isReceiverMode;
+  final List<String> connectedDevices;
+  final List<String> selectedTargetIds;
 
   const AudioStreamState({
     this.status = StreamStatus.disconnected,
     this.targetDevice,
     this.errorMessage,
     this.isReceiverMode = false,
+    this.connectedDevices = const [],
+    this.selectedTargetIds = const [],
   });
 
   AudioStreamState copyWith({
@@ -21,15 +25,19 @@ class AudioStreamState extends Equatable {
     AudioDevice? targetDevice,
     String? errorMessage,
     bool? isReceiverMode,
+    List<String>? connectedDevices,
+    List<String>? selectedTargetIds,
   }) {
     return AudioStreamState(
       status: status ?? this.status,
       targetDevice: targetDevice ?? this.targetDevice,
       errorMessage: errorMessage ?? this.errorMessage,
       isReceiverMode: isReceiverMode ?? this.isReceiverMode,
+      connectedDevices: connectedDevices ?? this.connectedDevices,
+      selectedTargetIds: selectedTargetIds ?? this.selectedTargetIds,
     );
   }
 
   @override
-  List<Object?> get props => [status, targetDevice, errorMessage, isReceiverMode];
+  List<Object?> get props => [status, targetDevice, errorMessage, isReceiverMode, connectedDevices, selectedTargetIds];
 }

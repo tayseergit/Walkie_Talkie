@@ -110,55 +110,122 @@ class NetworkScreen extends StatelessWidget {
         },
         child: Stack(
           children: [
-            BlocBuilder<NetworkCubit, NetworkState>(
-              builder: (context, state) {
-                if (state is NetworkInitial) {
-                  return Center(
-                    child: ElevatedButton(
-                      onPressed: () =>
-                          context.read<NetworkCubit>().fetchNetworkInfo(),
-                      child: const Text('Get Network Info'),
-                    ),
-                  );
-                } else if (state is NetworkLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (state is NetworkLoaded) {
-                  return NetworkLoadedView(state: state);
-                } else if (state is NetworkError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(
-                            Icons.error_outline,
-                            color: Colors.red,
-                            size: 48,
+            Column(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: BlocBuilder<NetworkCubit, NetworkState>(
+                    builder: (context, state) {
+                      if (state is NetworkInitial) {
+                        return Center(
+                          child: ElevatedButton(
+                            onPressed: () =>
+                                context.read<NetworkCubit>().fetchNetworkInfo(),
+                            child: const Text('Get Network Info'),
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            state.message,
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontSize: 16,
+                        );
+                      } else if (state is NetworkLoading) {
+                        return const Center(child: CircularProgressIndicator());
+                      } else if (state is NetworkLoaded) {
+                        return NetworkLoadedView(state: state);
+                      } else if (state is NetworkError) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  color: Colors.red,
+                                  size: 48,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  state.message,
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontSize: 16,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                ElevatedButton(
+                                  onPressed: () => context
+                                      .read<NetworkCubit>()
+                                      .refreshNetworkInfo(),
+                                  child: const Text('Retry'),
+                                ),
+                              ],
                             ),
-                            textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: () => context
-                                .read<NetworkCubit>()
-                                .refreshNetworkInfo(),
-                            child: const Text('Retry'),
-                          ),
-                        ],
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+                BlocBuilder<AudioStreamCubit, AudioStreamState>(
+                  builder: (context, state) {
+                    if (state.connectedDevices.isEmpty) return const SizedBox.shrink();
+                    return Expanded(
+                      flex: 2,
+                      child: Container(
+                        padding: const EdgeInsets.only(top: 8, left: 16, right: 16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor.withOpacity(0.05),
+                          border: Border(top: BorderSide(color: Colors.grey.shade300))
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text('Active Hub Targets', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                TextButton.icon(
+                                  icon: const Icon(Icons.select_all, size: 18),
+                                  label: const Text('Select All'),
+                                  onPressed: () {
+                                    final cubit = context.read<AudioStreamCubit>();
+                                    // Hacky Select All: loop and toggle if missing 
+                                    for (var ip in state.connectedDevices) {
+                                      if (!state.selectedTargetIds.contains(ip)) {
+                                        cubit.toggleTargetId(ip);
+                                      }
+                                    }
+                                  },
+                                )
+                              ],
+                            ),
+                            Expanded(
+                              child: ListView.builder(
+                                itemCount: state.connectedDevices.length,
+                                itemBuilder: (context, i) {
+                                  final ip = state.connectedDevices[i];
+                                  final isSelected = state.selectedTargetIds.contains(ip);
+                                  return Card(
+                                    elevation: 0,
+                                    margin: const EdgeInsets.symmetric(vertical: 4),
+                                    child: CheckboxListTile(
+                                      title: Text(ip, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      secondary: const Icon(Icons.speaker_phone, color: Colors.blue),
+                                      value: isSelected,
+                                      onChanged: (val) {
+                                        context.read<AudioStreamCubit>().toggleTargetId(ip);
+                                      },
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 90), // Spacing for floating action button
+                          ],
+                        ),
                       ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink();
-              },
+                    );
+                  },
+                ),
+              ],
             ),
 
             // Reusable Audio Action Button floated natively over existing UI

@@ -35,6 +35,9 @@ class AudioStreamRepositoryImpl implements AudioStreamRepository {
   Stream<AudioDeviceStatus> get connectionStatusStream => _connectionStatusController.stream;
 
   @override
+  Stream<List<String>> get deviceListStream => _tcpSocketDataSource.deviceListStream;
+
+  @override
   Future<void> connectToDevice(AudioDevice device, {required int port}) async {
     // Exposes the TCP generic link seamlessly mapping device metadata correctly
     await _tcpSocketDataSource.connectAsClient(device.ip, port);
@@ -60,14 +63,14 @@ class AudioStreamRepositoryImpl implements AudioStreamRepository {
   }
 
   @override
-  Future<void> startStreaming() async {
+  Future<void> startStreaming({String toId = 'all'}) async {
     await _audioCaptureDataSource.startCapture();
     
     _audioCaptureSubscription?.cancel();
     
     // Wire Mic recording raw output back directly out over the hardware socket TCP bridge
     _audioCaptureSubscription = _audioCaptureDataSource.audioStream.listen((chunk) {
-      _tcpSocketDataSource.sendAudioChunk(chunk);
+      _tcpSocketDataSource.sendAudioChunk(chunk, toId: toId);
     });
   }
 
