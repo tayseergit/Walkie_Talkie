@@ -11,6 +11,7 @@ class AudioPlaybackDataSource {
       await _player.initialize(
         sampleRate: 44100,
        );
+      await _player.start();
       _isInitialized = true;
       developer.log('Native sound_stream playback hardware initialized', name: 'AudioPlaybackDataSource');
     }
