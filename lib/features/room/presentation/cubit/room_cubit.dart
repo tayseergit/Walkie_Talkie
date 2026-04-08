@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../../../../core/services/background_session_service.dart';
 import '../../data/ws_client.dart';
 import '../../data/ws_server.dart';
 import '../../domain/models/peer_info.dart';
@@ -50,7 +49,6 @@ class RoomCubit extends Cubit<RoomState> {
     _myIp = ip;
 
     await _wsServer.start(port: 8765);
-    await BackgroundSessionService.instance.startSession();
     _wsUrl = 'ws://$ip:8765';
     emit(RoomHosting(wsUrl: _wsUrl!, myIp: ip, myName: _myName));
 
@@ -75,7 +73,6 @@ class RoomCubit extends Cubit<RoomState> {
   Future<void> joinRoom(String wsUrl) async {
     try {
       await _wsClient.connect(wsUrl);
-      await BackgroundSessionService.instance.startSession();
     } catch (e) {
       emit(RoomError('Could not connect: $e'));
       return;
@@ -86,7 +83,6 @@ class RoomCubit extends Cubit<RoomState> {
     _subs.add(_wsClient.messages.listen(_handleClientMessage));
     _subs.add(_wsClient.onClosed.listen((_) async {
       await _cleanupWebRtc();
-      await BackgroundSessionService.instance.stopSession();
       emit(const RoomClosed('Disconnected from room host.'));
     }));
 
@@ -316,7 +312,6 @@ class RoomCubit extends Cubit<RoomState> {
     } else {
       await _wsClient.disconnect();
     }
-    await BackgroundSessionService.instance.stopSession();
     if (!isClosed) emit(const RoomIdle());
   }
 
@@ -332,7 +327,6 @@ class RoomCubit extends Cubit<RoomState> {
     await _cleanupWebRtc();
     await _wsServer.stop();
     await _wsClient.disconnect();
-    await BackgroundSessionService.instance.stopSession();
     return super.close();
   }
 }

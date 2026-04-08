@@ -28,10 +28,6 @@ dependencies:
   shelf_web_socket: ^2.0.0
   web_socket_channel: ^3.0.1
 
-  # Keep signaling/webrtc process alive in Android foreground service
-  flutter_background_service: ^5.0.10
-  flutter_background_service_android: ^6.3.0
-
   # QR code display + scanning
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.0.0

@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'core/services/background_session_service.dart';
 import 'features/room/presentation/cubit/room_cubit.dart';
 import 'features/room/presentation/screens/room_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await BackgroundSessionService.instance.initialize();
   runApp(const MyApp());
 }
 
