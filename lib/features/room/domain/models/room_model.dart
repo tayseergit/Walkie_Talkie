@@ -30,11 +30,11 @@ class RoomHosting extends RoomState {
   });
 
   RoomHosting copyWith({List<PeerInfo>? clients}) => RoomHosting(
-        wsUrl: wsUrl,
-        myIp: myIp,
-        myName: myName,
-        clients: clients ?? this.clients,
-      );
+    wsUrl: wsUrl,
+    myIp: myIp,
+    myName: myName,
+    clients: clients ?? this.clients,
+  );
 
   @override
   List<Object?> get props => [wsUrl, myIp, myName, clients];
@@ -69,6 +69,7 @@ class RoomActive extends RoomState {
   /// The remote peer is currently talking – this device's PTT is locked.
   final bool peerTalking;
   final bool isConnected;
+  final List<String> connectedPeerIds;
 
   /// WebSocket URL for hosting (only available for hosts)
   final String? wsUrl;
@@ -83,24 +84,28 @@ class RoomActive extends RoomState {
     this.isTalking = false,
     this.peerTalking = false,
     this.isConnected = false,
+    this.connectedPeerIds = const [],
     this.wsUrl,
     this.clients = const [],
   });
 
   RoomActive copyWith({
     PeerInfo? selectedPeer,
+    bool updateSelectedPeer = false,
     bool? isTalking,
     bool? peerTalking,
     bool? isConnected,
+    List<String>? connectedPeerIds,
     String? wsUrl,
     List<PeerInfo>? clients,
   }) => RoomActive(
     isHost: isHost,
     myId: myId,
-    selectedPeer: selectedPeer ?? this.selectedPeer,
+    selectedPeer: updateSelectedPeer ? selectedPeer : this.selectedPeer,
     isTalking: isTalking ?? this.isTalking,
     peerTalking: peerTalking ?? this.peerTalking,
     isConnected: isConnected ?? this.isConnected,
+    connectedPeerIds: connectedPeerIds ?? this.connectedPeerIds,
     wsUrl: wsUrl ?? this.wsUrl,
     clients: clients ?? this.clients,
   );
@@ -113,6 +118,7 @@ class RoomActive extends RoomState {
     isTalking,
     peerTalking,
     isConnected,
+    connectedPeerIds,
     wsUrl,
     clients,
   ];

@@ -42,7 +42,7 @@ class _HomeViewState extends State<HomeView> {
                     ),
                     const SizedBox(height: 16),
                     const Text(
-                      'Communicate',
+                      'walkie-talkie',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 32,
@@ -51,11 +51,7 @@ class _HomeViewState extends State<HomeView> {
                         letterSpacing: 1.2,
                       ),
                     ),
-                    const Text(
-                      'Local walkie-talkie',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Color(0xFF8B949E), fontSize: 14),
-                    ),
+                     
                     const SizedBox(height: 40),
                     TextField(
                       controller: _nameCtrl,

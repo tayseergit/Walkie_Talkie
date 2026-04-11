@@ -17,9 +17,10 @@ class ActiveCallView extends StatelessWidget {
     final cubit = context.read<RoomCubit>();
     final selected = state.selectedPeer;
     final peerName = selected?.name ?? 'No target selected';
+    final connectedCount = state.connectedPeerIds.length;
     final isTalking = state.isTalking;
     final peerTalking = state.peerTalking;
-    final pttLocked = !state.isConnected || peerTalking;
+    final pttLocked = selected == null || !state.isConnected || peerTalking;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
@@ -41,8 +42,8 @@ class ActiveCallView extends StatelessWidget {
           final crossAxisCount = width >= 900
               ? 4
               : width >= 700
-                  ? 3
-                  : 2;
+              ? 3
+              : 2;
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
@@ -65,7 +66,9 @@ class ActiveCallView extends StatelessWidget {
                           Expanded(
                             child: GestureDetector(
                               onTap: () {
-                                Clipboard.setData(ClipboardData(text: state.wsUrl!));
+                                Clipboard.setData(
+                                  ClipboardData(text: state.wsUrl!),
+                                );
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('URL copied'),
@@ -75,7 +78,10 @@ class ActiveCallView extends StatelessWidget {
                               },
                               child: Text(
                                 state.wsUrl!,
-                                style: const TextStyle(color: Color(0xFF58A6FF), fontSize: 11),
+                                style: const TextStyle(
+                                  color: Color(0xFF58A6FF),
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
                           ),
@@ -93,6 +99,14 @@ class ActiveCallView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
+                Text(
+                  'Connected: $connectedCount',
+                  style: const TextStyle(
+                    color: Color(0xFF8B949E),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 10),
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -108,6 +122,7 @@ class ActiveCallView extends StatelessWidget {
                     return ClientCard(
                       client: client,
                       selected: selected?.name == client.name,
+                      connected: state.connectedPeerIds.contains(client.name),
                       onTap: () => cubit.callPeer(client),
                     );
                   },
@@ -128,12 +143,18 @@ class ActiveCallView extends StatelessWidget {
                   ),
                 const SizedBox(height: 24),
                 Text(
-                  state.isConnected
-                      ? (peerTalking ? '$peerName is talking...' : 'Connected to $peerName')
-                      : 'Select a client to start direct call',
+                  selected == null
+                      ? 'Select a client to start direct call'
+                      : state.isConnected
+                      ? (peerTalking
+                            ? '$peerName is talking...'
+                            : 'Connected to $peerName')
+                      : 'Tap $peerName to connect',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: state.isConnected ? Colors.greenAccent : const Color(0xFF8B949E),
+                    color: state.isConnected
+                        ? Colors.greenAccent
+                        : const Color(0xFF8B949E),
                     fontSize: 14,
                   ),
                 ),
@@ -142,7 +163,9 @@ class ActiveCallView extends StatelessWidget {
                   child: GestureDetector(
                     onTapDown: pttLocked ? null : (_) => cubit.pressedPtt(),
                     onTapUp: (_) => cubit.releasedPtt(),
-                    onLongPressStart: pttLocked ? null : (_) => cubit.pressedPtt(),
+                    onLongPressStart: pttLocked
+                        ? null
+                        : (_) => cubit.pressedPtt(),
                     onLongPressEnd: (_) => cubit.releasedPtt(),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
@@ -154,7 +177,9 @@ class ActiveCallView extends StatelessWidget {
                       ),
                       child: Center(
                         child: Icon(
-                          pttLocked ? Icons.lock_outline : (isTalking ? Icons.mic : Icons.mic_none),
+                          pttLocked
+                              ? Icons.lock_outline
+                              : (isTalking ? Icons.mic : Icons.mic_none),
                           color: Colors.white,
                           size: 52,
                         ),
@@ -165,7 +190,7 @@ class ActiveCallView extends StatelessWidget {
                 const SizedBox(height: 20),
                 Text(
                   pttLocked
-                      ? 'PTT disabled until direct peer is connected'
+                      ? 'PTT disabled until selected peer is connected'
                       : (isTalking ? 'Release to stop' : 'Hold to talk'),
                   textAlign: TextAlign.center,
                   style: TextStyle(

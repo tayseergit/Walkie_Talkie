@@ -16,12 +16,14 @@ class RoomCubit extends Cubit<RoomState> {
   final WebRtcService _webRtc = WebRtcService();
   final NetworkInfo _networkInfo = NetworkInfo();
   final List<StreamSubscription> _subs = [];
+  final Set<String> _connectedPeerIds = {};
+  final Set<String> _peerTalkingIds = {};
 
   bool _isHost = false;
   String _myName = 'Device';
   late String _myId;
   String? _myIp;
-  String? _activeTargetId;
+  String? _talkingPeerId;
   String? _wsUrl;
 
   RoomCubit() : super(const RoomIdle()) {
@@ -30,7 +32,9 @@ class RoomCubit extends Cubit<RoomState> {
   }
 
   String _newDeviceId(String seed) {
-    final clean = seed.trim().isEmpty ? 'device' : seed.trim().replaceAll(' ', '_');
+    final clean = seed.trim().isEmpty
+        ? 'device'
+        : seed.trim().replaceAll(' ', '_');
     final tail = DateTime.now().millisecondsSinceEpoch % 100000;
     final rnd = Random().nextInt(900) + 100;
     return '$clean-$tail$rnd';
@@ -81,20 +85,26 @@ class RoomCubit extends Cubit<RoomState> {
     _myIp = await _networkInfo.getWifiIP();
 
     _subs.add(_wsClient.messages.listen(_handleClientMessage));
-    _subs.add(_wsClient.onClosed.listen((_) async {
-      await _cleanupWebRtc();
-      emit(const RoomClosed('Disconnected from room host.'));
-    }));
+    _subs.add(
+      _wsClient.onClosed.listen((_) async {
+        await _cleanupWebRtc();
+        emit(const RoomClosed('Disconnected from room host.'));
+      }),
+    );
 
-    emit(RoomActive(isHost: false, myId: _myId, clients: const []));
+    emit(
+      RoomActive(
+        isHost: false,
+        myId: _myId,
+        clients: const [],
+        connectedPeerIds: const [],
+      ),
+    );
     _wsClient.send({
       'type': 'join',
       'from': _myId,
       'to': 'host',
-      'data': {
-        'ip': _myIp ?? '',
-        'name': _myName,
-      },
+      'data': {'ip': _myIp ?? '', 'name': _myName},
     });
   }
 
@@ -116,20 +126,33 @@ class RoomCubit extends Cubit<RoomState> {
             .where((p) => p.name != _myId)
             .toList();
         if (state is RoomActive) {
-          var active = state as RoomActive;
-          final selected = active.selectedPeer;
-          final selectedStillExists = selected != null && peers.any((p) => p.name == selected.name);
-          active = active.copyWith(
-            clients: peers,
-            selectedPeer: selectedStillExists ? selected : null,
-            isConnected: selectedStillExists ? active.isConnected : false,
-            isTalking: selectedStillExists ? active.isTalking : false,
-            peerTalking: selectedStillExists ? active.peerTalking : false,
-          );
-          if (!selectedStillExists) {
-            _activeTargetId = null;
+          final active = state as RoomActive;
+          final availableIds = peers.map((p) => p.name).toSet();
+          final stalePeerIds = _webRtc.peerIds
+              .where((id) => !availableIds.contains(id))
+              .toList();
+          for (final staleId in stalePeerIds) {
+            await _disconnectPeer(staleId, notifyUnlock: false);
           }
-          emit(active);
+
+          final selected = active.selectedPeer;
+          final selectedStillExists =
+              selected != null && availableIds.contains(selected.name);
+          final selectedId = selectedStillExists ? selected.name : null;
+
+          emit(
+            active.copyWith(
+              clients: peers,
+              updateSelectedPeer: !selectedStillExists,
+              selectedPeer: null,
+              connectedPeerIds: _sortedConnectedPeerIds(),
+              isConnected:
+                  selectedId != null && _connectedPeerIds.contains(selectedId),
+              isTalking: selectedId != null && _talkingPeerId == selectedId,
+              peerTalking:
+                  selectedId != null && _peerTalkingIds.contains(selectedId),
+            ),
+          );
         }
         return;
 
@@ -149,8 +172,20 @@ class RoomCubit extends Cubit<RoomState> {
       case 'unlock':
         if (state is RoomActive) {
           final from = msg['from'] as String?;
-          if (from != null && from == _activeTargetId) {
-            emit((state as RoomActive).copyWith(peerTalking: type == 'lock'));
+          if (from != null) {
+            if (type == 'lock') {
+              _peerTalkingIds.add(from);
+            } else {
+              _peerTalkingIds.remove(from);
+            }
+            final cur = state as RoomActive;
+            final selectedId = cur.selectedPeer?.name;
+            emit(
+              cur.copyWith(
+                peerTalking:
+                    selectedId != null && _peerTalkingIds.contains(selectedId),
+              ),
+            );
           }
         }
         return;
@@ -160,30 +195,49 @@ class RoomCubit extends Cubit<RoomState> {
   Future<void> callPeer(PeerInfo target) async {
     if (_isHost || state is! RoomActive) return;
     if (target.name == _myId) return;
+    final cur = state as RoomActive;
+
+    if (_webRtc.hasPeer(target.name)) {
+      await _disconnectPeer(target.name);
+      final current = state;
+      if (current is RoomActive) {
+        emit(
+          current.copyWith(
+            updateSelectedPeer: true,
+            selectedPeer: target,
+            isConnected: false,
+            isTalking: false,
+            peerTalking: false,
+            connectedPeerIds: _sortedConnectedPeerIds(),
+          ),
+        );
+      }
+      return;
+    }
+
     if (!await Permission.microphone.request().isGranted) {
       emit(const RoomError('Microphone permission denied.'));
       return;
     }
 
-    _activeTargetId = target.name;
-    final cur = state as RoomActive;
-    emit(cur.copyWith(
-      selectedPeer: target,
-      isConnected: false,
-      isTalking: false,
-      peerTalking: false,
-    ));
+    emit(
+      cur.copyWith(
+        updateSelectedPeer: true,
+        selectedPeer: target,
+        isConnected: _connectedPeerIds.contains(target.name),
+        isTalking: _talkingPeerId == target.name,
+        peerTalking: _peerTalkingIds.contains(target.name),
+        connectedPeerIds: _sortedConnectedPeerIds(),
+      ),
+    );
 
-    await _cleanupWebRtc();
     await _webRtc.initialize();
-    final offer = await _webRtc.createOffer();
+    final offer = await _webRtc.createOffer(target.name);
     _wsClient.send({
       'type': 'offer',
       'from': _myId,
       'to': target.name,
-      'data': {
-        'sdp': offer.sdp,
-      },
+      'data': {'sdp': offer.sdp},
     });
   }
 
@@ -199,30 +253,32 @@ class RoomCubit extends Cubit<RoomState> {
     final sdp = data?['sdp'] as String?;
     if (from == null || sdp == null) return;
 
-    _activeTargetId = from;
     final peers = (state as RoomActive).clients;
     final matches = peers.where((p) => p.name == from);
-    final peer = matches.isNotEmpty ? matches.first : PeerInfo(name: from, ip: '');
+    final peer = matches.isNotEmpty
+        ? matches.first
+        : PeerInfo(name: from, ip: '');
 
-    emit((state as RoomActive).copyWith(
-      selectedPeer: peer,
-      isConnected: false,
-      isTalking: false,
-      peerTalking: false,
-    ));
+    emit(
+      (state as RoomActive).copyWith(
+        updateSelectedPeer: true,
+        selectedPeer: peer,
+        isConnected: _connectedPeerIds.contains(from),
+        isTalking: _talkingPeerId == from,
+        peerTalking: _peerTalkingIds.contains(from),
+        connectedPeerIds: _sortedConnectedPeerIds(),
+      ),
+    );
 
-    await _cleanupWebRtc();
     await _webRtc.initialize();
 
     final offer = RTCSessionDescription(sdp, 'offer');
-    final answer = await _webRtc.createAnswer(offer);
+    final answer = await _webRtc.createAnswer(from, offer);
     _wsClient.send({
       'type': 'answer',
       'from': _myId,
       'to': from,
-      'data': {
-        'sdp': answer.sdp,
-      },
+      'data': {'sdp': answer.sdp},
     });
   }
 
@@ -230,17 +286,18 @@ class RoomCubit extends Cubit<RoomState> {
     final from = msg['from'] as String?;
     final data = msg['data'] as Map<String, dynamic>?;
     final sdp = data?['sdp'] as String?;
-    if (from == null || sdp == null || from != _activeTargetId) return;
-    await _webRtc.setRemoteAnswer(RTCSessionDescription(sdp, 'answer'));
+    if (from == null || sdp == null) return;
+    await _webRtc.setRemoteAnswer(from, RTCSessionDescription(sdp, 'answer'));
   }
 
   Future<void> _acceptIncomingIce(Map<String, dynamic> msg) async {
     final from = msg['from'] as String?;
     final data = msg['data'] as Map<String, dynamic>?;
-    if (from == null || data == null || from != _activeTargetId) return;
+    if (from == null || data == null) return;
     final candidate = data['candidate'] as String?;
     if (candidate == null) return;
     await _webRtc.addIceCandidate(
+      from,
       RTCIceCandidate(
         candidate,
         data['sdpMid'] as String?,
@@ -250,63 +307,100 @@ class RoomCubit extends Cubit<RoomState> {
   }
 
   void _listenWebRtcStreams() {
-    _subs.add(_webRtc.iceStream.listen((candidate) {
-      if (_isHost || !_wsClient.isConnected || _activeTargetId == null) return;
-      _wsClient.send({
-        'type': 'ice',
-        'from': _myId,
-        'to': _activeTargetId,
-        'data': {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        },
-      });
-    }));
+    _subs.add(
+      _webRtc.iceStream.listen((event) {
+        if (_isHost || !_wsClient.isConnected) return;
+        _wsClient.send({
+          'type': 'ice',
+          'from': _myId,
+          'to': event.peerId,
+          'data': {
+            'candidate': event.candidate.candidate,
+            'sdpMid': event.candidate.sdpMid,
+            'sdpMLineIndex': event.candidate.sdpMLineIndex,
+          },
+        });
+      }),
+    );
 
-    _subs.add(_webRtc.connectionStream.listen((connected) {
-      if (state is! RoomActive) return;
-      final cur = state as RoomActive;
-      emit(cur.copyWith(
-        isConnected: connected,
-        isTalking: connected ? cur.isTalking : false,
-        peerTalking: connected ? cur.peerTalking : false,
-      ));
-    }));
+    _subs.add(
+      _webRtc.connectionStream.listen((event) {
+        if (event.isConnected) {
+          _connectedPeerIds.add(event.peerId);
+        } else {
+          _connectedPeerIds.remove(event.peerId);
+          _peerTalkingIds.remove(event.peerId);
+          if (_talkingPeerId == event.peerId) {
+            _webRtc.stopTalking();
+            _talkingPeerId = null;
+          }
+        }
+
+        if (state is! RoomActive) return;
+        final cur = state as RoomActive;
+        final selectedId = cur.selectedPeer?.name;
+        emit(
+          cur.copyWith(
+            connectedPeerIds: _sortedConnectedPeerIds(),
+            isConnected:
+                selectedId != null && _connectedPeerIds.contains(selectedId),
+            isTalking: selectedId != null && _talkingPeerId == selectedId,
+            peerTalking:
+                selectedId != null && _peerTalkingIds.contains(selectedId),
+          ),
+        );
+      }),
+    );
   }
 
   void pressedPtt() {
     final cur = state;
     if (cur is! RoomActive) return;
-    if (!cur.isConnected || cur.peerTalking || cur.isTalking || _activeTargetId == null) return;
+    final targetId = cur.selectedPeer?.name;
+    if (targetId == null) return;
+    if (!_connectedPeerIds.contains(targetId) ||
+        _peerTalkingIds.contains(targetId) ||
+        _talkingPeerId != null) {
+      return;
+    }
 
     _webRtc.startTalking();
+    _talkingPeerId = targetId;
     _wsClient.send({
       'type': 'lock',
       'from': _myId,
-      'to': _activeTargetId,
+      'to': targetId,
       'data': null,
     });
-    emit(cur.copyWith(isTalking: true));
+    emit(cur.copyWith(isTalking: true, peerTalking: false, isConnected: true));
   }
 
   void releasedPtt() {
     final cur = state;
-    if (cur is! RoomActive || !cur.isTalking || _activeTargetId == null) return;
+    if (cur is! RoomActive || _talkingPeerId == null) return;
+    final targetId = _talkingPeerId!;
 
     _webRtc.stopTalking();
     _wsClient.send({
       'type': 'unlock',
       'from': _myId,
-      'to': _activeTargetId,
+      'to': targetId,
       'data': null,
     });
-    emit(cur.copyWith(isTalking: false));
+    _talkingPeerId = null;
+    final selectedId = cur.selectedPeer?.name;
+    emit(
+      cur.copyWith(
+        isTalking: selectedId != null && _talkingPeerId == selectedId,
+        peerTalking: selectedId != null && _peerTalkingIds.contains(selectedId),
+        isConnected:
+            selectedId != null && _connectedPeerIds.contains(selectedId),
+      ),
+    );
   }
 
   Future<void> disconnect() async {
     await _cleanupWebRtc();
-    _activeTargetId = null;
     if (_isHost) {
       await _wsServer.stop();
     } else {
@@ -317,6 +411,37 @@ class RoomCubit extends Cubit<RoomState> {
 
   Future<void> _cleanupWebRtc() async {
     await _webRtc.dispose();
+    _connectedPeerIds.clear();
+    _peerTalkingIds.clear();
+    _talkingPeerId = null;
+  }
+
+  List<String> _sortedConnectedPeerIds() {
+    final ids = _connectedPeerIds.toList();
+    ids.sort();
+    return ids;
+  }
+
+  Future<void> _disconnectPeer(
+    String peerId, {
+    bool notifyUnlock = true,
+  }) async {
+    if (_talkingPeerId == peerId) {
+      _webRtc.stopTalking();
+      if (notifyUnlock && _wsClient.isConnected) {
+        _wsClient.send({
+          'type': 'unlock',
+          'from': _myId,
+          'to': peerId,
+          'data': null,
+        });
+      }
+      _talkingPeerId = null;
+    }
+
+    await _webRtc.closePeer(peerId);
+    _connectedPeerIds.remove(peerId);
+    _peerTalkingIds.remove(peerId);
   }
 
   @override

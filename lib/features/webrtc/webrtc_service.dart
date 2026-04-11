@@ -2,7 +2,21 @@ import 'dart:async';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
-/// Wraps a single RTCPeerConnection for 1-to-1 LAN audio.
+class PeerIceCandidateEvent {
+  final String peerId;
+  final RTCIceCandidate candidate;
+
+  const PeerIceCandidateEvent({required this.peerId, required this.candidate});
+}
+
+class PeerConnectionEvent {
+  final String peerId;
+  final bool isConnected;
+
+  const PeerConnectionEvent({required this.peerId, required this.isConnected});
+}
+
+/// Manages RTCPeerConnections for LAN audio calls (one PC per remote peer).
 ///
 /// Flow:
 ///   Host  → [initialize] → [createOffer]   → exchange SDP/ICE via WS
@@ -11,18 +25,24 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 /// PTT: [startTalking] / [stopTalking] enables/disables the local audio track.
 /// Bluetooth: [Helper.setSpeakerphoneOn(false)] routes audio to earpiece / BT headset.
 class WebRtcService {
-  RTCPeerConnection? _pc;
+  final Map<String, RTCPeerConnection> _peers = {};
   MediaStream? _localStream;
   bool _audioSessionReady = false;
 
-  final _iceController = StreamController<RTCIceCandidate>.broadcast();
-  final _connectedController = StreamController<bool>.broadcast();
+  final _iceController = StreamController<PeerIceCandidateEvent>.broadcast();
+  final _connectedController =
+      StreamController<PeerConnectionEvent>.broadcast();
 
   /// Emits local ICE candidates – relay these via WS to the peer.
-  Stream<RTCIceCandidate> get iceStream => _iceController.stream;
+  Stream<PeerIceCandidateEvent> get iceStream => _iceController.stream;
 
   /// True when the WebRTC P2P link is established and audio can flow.
-  Stream<bool> get connectionStream => _connectedController.stream;
+  Stream<PeerConnectionEvent> get connectionStream =>
+      _connectedController.stream;
+
+  Set<String> get peerIds => _peers.keys.toSet();
+
+  bool hasPeer(String peerId) => _peers.containsKey(peerId);
 
   // LAN-only config: no STUN/TURN needed
   static const Map<String, dynamic> _iceConfig = {
@@ -52,28 +72,40 @@ class WebRtcService {
     await Helper.setSpeakerphoneOn(false);
   }
 
-  /// Creates the RTCPeerConnection and wires up all callbacks.
-  Future<void> _createPc() async {
-    await _configureAudioSession();
-    await _pc?.close();
-    _pc = await createPeerConnection(_iceConfig);
+  /// Creates/reuses one RTCPeerConnection per peer and wires up callbacks.
+  Future<RTCPeerConnection> _ensurePeerConnection(String peerId) async {
+    final existing = _peers[peerId];
+    if (existing != null) return existing;
 
-    _pc!.onIceCandidate = (candidate) {
-      if (candidate.candidate != null) _iceController.add(candidate);
+    await _configureAudioSession();
+    final pc = await createPeerConnection(_iceConfig);
+
+    pc.onIceCandidate = (candidate) {
+      if (candidate.candidate != null) {
+        _iceController.add(
+          PeerIceCandidateEvent(peerId: peerId, candidate: candidate),
+        );
+      }
     };
 
-    _pc!.onConnectionState = (state) {
-      final active = state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
-      _connectedController.add(active);
+    pc.onConnectionState = (state) {
+      final active =
+          state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+      _connectedController.add(
+        PeerConnectionEvent(peerId: peerId, isConnected: active),
+      );
     };
 
     // Remote audio track is rendered automatically by flutter_webrtc
-    _pc!.onTrack = (event) {};
+    pc.onTrack = (event) {};
 
-    // Add local mic track (muted) to the connection
+    // Reuse same local mic stream across all peers.
     for (final track in _localStream!.getAudioTracks()) {
-      await _pc!.addTrack(track, _localStream!);
+      await pc.addTrack(track, _localStream!);
     }
+
+    _peers[peerId] = pc;
+    return pc;
   }
 
   Future<void> _configureAudioSession() async {
@@ -98,31 +130,50 @@ class WebRtcService {
     _audioSessionReady = true;
   }
 
-  /// HOST: creates and returns an SDP offer. Set [setLocalDescription] internally.
-  Future<RTCSessionDescription> createOffer() async {
-    await _createPc();
-    final offer = await _pc!.createOffer({'offerToReceiveAudio': 1});
-    await _pc!.setLocalDescription(offer);
+  /// Creates and returns an SDP offer for a specific peer.
+  Future<RTCSessionDescription> createOffer(String peerId) async {
+    final pc = await _ensurePeerConnection(peerId);
+    final offer = await pc.createOffer({'offerToReceiveAudio': 1});
+    await pc.setLocalDescription(offer);
     return offer;
   }
 
-  /// CLIENT: takes the host's offer, creates an answer.
-  Future<RTCSessionDescription> createAnswer(RTCSessionDescription offer) async {
-    await _createPc();
-    await _pc!.setRemoteDescription(offer);
-    final answer = await _pc!.createAnswer({'offerToReceiveAudio': 1});
-    await _pc!.setLocalDescription(answer);
+  /// Takes a remote offer from [peerId] and creates an answer.
+  Future<RTCSessionDescription> createAnswer(
+    String peerId,
+    RTCSessionDescription offer,
+  ) async {
+    final pc = await _ensurePeerConnection(peerId);
+    await pc.setRemoteDescription(offer);
+    final answer = await pc.createAnswer({'offerToReceiveAudio': 1});
+    await pc.setLocalDescription(answer);
     return answer;
   }
 
-  /// HOST: call after receiving the client's SDP answer via WS.
-  Future<void> setRemoteAnswer(RTCSessionDescription answer) async {
-    await _pc!.setRemoteDescription(answer);
+  /// Call after receiving the peer's SDP answer via WS.
+  Future<void> setRemoteAnswer(
+    String peerId,
+    RTCSessionDescription answer,
+  ) async {
+    final pc = _peers[peerId];
+    if (pc == null) return;
+    await pc.setRemoteDescription(answer);
   }
 
   /// Add a remote ICE candidate forwarded via WS.
-  Future<void> addIceCandidate(RTCIceCandidate candidate) async {
-    await _pc?.addCandidate(candidate);
+  Future<void> addIceCandidate(String peerId, RTCIceCandidate candidate) async {
+    final pc = _peers[peerId];
+    if (pc == null) return;
+    await pc.addCandidate(candidate);
+  }
+
+  Future<void> closePeer(String peerId) async {
+    final pc = _peers.remove(peerId);
+    if (pc == null) return;
+    await pc.close();
+    _connectedController.add(
+      PeerConnectionEvent(peerId: peerId, isConnected: false),
+    );
   }
 
   void _setMicEnabled(bool enabled) {
@@ -137,8 +188,10 @@ class WebRtcService {
 
   Future<void> dispose() async {
     _setMicEnabled(false);
-    await _pc?.close();
-    _pc = null;
+    for (final pc in _peers.values) {
+      await pc.close();
+    }
+    _peers.clear();
     _localStream?.getTracks().forEach((t) => t.stop());
     await _localStream?.dispose();
     _localStream = null;
