@@ -1,4 +1,4 @@
-# Comunicate (Walkie-Talkie)
+#  Walkie-Talkie 
 
 An offline, local-network walkie-talkie application built with Flutter. Experience real-time, low-latency audio communication without the need for an active internet connection.
 
