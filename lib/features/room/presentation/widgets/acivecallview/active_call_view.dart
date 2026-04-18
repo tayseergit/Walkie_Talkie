@@ -17,20 +17,17 @@ class ActiveCallView extends StatelessWidget {
     final cubit = context.read<RoomCubit>();
     final connectedCount = state.connectedPeers.length;
     final isTalking = state.isTalking;
-    final peerTalking = state.peerTalking;
     
     final selectedCount = state.selectedPeers.length;
     final activeConnectedCount = state.connectedPeers.intersection(state.selectedPeers).length;
     final hasActiveConnected = activeConnectedCount > 0;
-    final pttLocked = !hasActiveConnected || peerTalking;
+    final pttLocked = !hasActiveConnected;
 
     String statusText;
     if (selectedCount == 0) {
       statusText = 'Select at least one client to start call';
     } else if (hasActiveConnected) {
-      statusText = peerTalking
-          ? 'Someone is talking...'
-          : 'Connected to $activeConnectedCount peer(s)';
+      statusText = 'Connected to $activeConnectedCount peer(s)';
     } else {
       statusText = 'Tap a peer to connect';
     }

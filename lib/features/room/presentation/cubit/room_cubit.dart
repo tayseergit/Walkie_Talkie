@@ -20,7 +20,6 @@ class RoomCubit extends Cubit<RoomState> {
   final Set<String> _connectedPeerIds = {};
   final Set<String> _selectedPeerIds = {};
   final Map<String, ConnectionStatus> _connectionStates = {};
-  final Set<String> _peerTalkingIds = {};
 
   bool _isHost = false;
   String _myName = 'Device';
@@ -52,7 +51,6 @@ class RoomCubit extends Cubit<RoomState> {
           selectedPeers: _selectedPeerIds.toSet(),
           connectionStates: Map.from(_connectionStates),
           isTalking: _isTalkingLocally,
-          peerTalking: _peerTalkingIds.isNotEmpty,
           clients: clientsOverride ?? cur.clients,
         ),
       );
@@ -166,21 +164,6 @@ class RoomCubit extends Cubit<RoomState> {
 
       case 'ice':
         await _acceptIncomingIce(msg);
-        return;
-
-      case 'lock':
-      case 'unlock':
-        if (state is RoomActive) {
-          final from = msg['from'] as String?;
-          if (from != null) {
-            if (type == 'lock') {
-              _peerTalkingIds.add(from);
-            } else {
-              _peerTalkingIds.remove(from);
-            }
-            _emitActiveState();
-          }
-        }
         return;
     }
   }
@@ -304,7 +287,6 @@ class RoomCubit extends Cubit<RoomState> {
           _connectedPeerIds.remove(event.peerId);
           _selectedPeerIds.remove(event.peerId);
           _connectionStates[event.peerId] = ConnectionStatus.disconnected;
-          _peerTalkingIds.remove(event.peerId);
         }
 
         if (state is RoomActive) {
@@ -317,19 +299,9 @@ class RoomCubit extends Cubit<RoomState> {
   void pressedPtt() {
     if (state is! RoomActive) return;
     if (_connectedPeerIds.intersection(_selectedPeerIds).isEmpty) return;
-    if (_peerTalkingIds.isNotEmpty) return; 
 
     _isTalkingLocally = true;
     _webRtc.updateTalking(true, _selectedPeerIds);
-    
-    for (var targetId in _selectedPeerIds.intersection(_connectedPeerIds)) {
-      _wsClient.send({
-        'type': 'lock',
-        'from': _myId,
-        'to': targetId,
-        'data': null,
-      });
-    }
     _emitActiveState();
   }
 
@@ -338,15 +310,6 @@ class RoomCubit extends Cubit<RoomState> {
 
     _isTalkingLocally = false;
     _webRtc.updateTalking(false, _selectedPeerIds);
-
-    for (var targetId in _selectedPeerIds.intersection(_connectedPeerIds)) {
-      _wsClient.send({
-        'type': 'unlock',
-        'from': _myId,
-        'to': targetId,
-        'data': null,
-      });
-    }
     _emitActiveState();
   }
 
@@ -365,7 +328,6 @@ class RoomCubit extends Cubit<RoomState> {
     _connectedPeerIds.clear();
     _selectedPeerIds.clear();
     _connectionStates.clear();
-    _peerTalkingIds.clear();
     _isTalkingLocally = false;
   }
 
@@ -373,22 +335,10 @@ class RoomCubit extends Cubit<RoomState> {
     String peerId, {
     bool notifyUnlock = true,
   }) async {
-    if (_isTalkingLocally && _selectedPeerIds.contains(peerId)) {
-      if (notifyUnlock && _wsClient.isConnected) {
-        _wsClient.send({
-          'type': 'unlock',
-          'from': _myId,
-          'to': peerId,
-          'data': null,
-        });
-      }
-    }
-
     await _webRtc.closePeer(peerId);
     _connectedPeerIds.remove(peerId);
     _selectedPeerIds.remove(peerId);
     _connectionStates[peerId] = ConnectionStatus.disconnected;
-    _peerTalkingIds.remove(peerId);
   }
 
   @override

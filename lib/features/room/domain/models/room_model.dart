@@ -67,9 +67,6 @@ class RoomActive extends RoomState {
   /// This device is currently holding PTT and talking.
   final bool isTalking;
 
-  /// The remote peer is currently talking – this device's PTT is locked.
-  final bool peerTalking;
-
   final Set<String> connectedPeers;
   final Set<String> selectedPeers;
   final Map<String, ConnectionStatus> connectionStates;
@@ -84,7 +81,6 @@ class RoomActive extends RoomState {
     required this.isHost,
     required this.myId,
     this.isTalking = false,
-    this.peerTalking = false,
     this.connectedPeers = const {},
     this.selectedPeers = const {},
     this.connectionStates = const {},
@@ -94,7 +90,6 @@ class RoomActive extends RoomState {
 
   RoomActive copyWith({
     bool? isTalking,
-    bool? peerTalking,
     Set<String>? connectedPeers,
     Set<String>? selectedPeers,
     Map<String, ConnectionStatus>? connectionStates,
@@ -105,7 +100,6 @@ class RoomActive extends RoomState {
         isHost: isHost,
         myId: myId,
         isTalking: isTalking ?? this.isTalking,
-        peerTalking: peerTalking ?? this.peerTalking,
         connectedPeers: connectedPeers ?? this.connectedPeers,
         selectedPeers: selectedPeers ?? this.selectedPeers,
         connectionStates: connectionStates ?? this.connectionStates,
@@ -118,7 +112,6 @@ class RoomActive extends RoomState {
         isHost,
         myId,
         isTalking,
-        peerTalking,
         connectedPeers,
         selectedPeers,
         connectionStates,
