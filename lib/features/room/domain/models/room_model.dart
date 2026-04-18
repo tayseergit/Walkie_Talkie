@@ -57,19 +57,22 @@ class RoomConnecting extends RoomState {
   List<Object?> get props => [isHost, peerName];
 }
 
+enum ConnectionStatus { disconnected, connecting, connected }
+
 /// P2P link is established – call is active.
 class RoomActive extends RoomState {
   final bool isHost;
   final String myId;
-  final PeerInfo? selectedPeer;
 
   /// This device is currently holding PTT and talking.
   final bool isTalking;
 
   /// The remote peer is currently talking – this device's PTT is locked.
   final bool peerTalking;
-  final bool isConnected;
-  final List<String> connectedPeerIds;
+
+  final Set<String> connectedPeers;
+  final Set<String> selectedPeers;
+  final Map<String, ConnectionStatus> connectionStates;
 
   /// WebSocket URL for hosting (only available for hosts)
   final String? wsUrl;
@@ -80,48 +83,48 @@ class RoomActive extends RoomState {
   const RoomActive({
     required this.isHost,
     required this.myId,
-    this.selectedPeer,
     this.isTalking = false,
     this.peerTalking = false,
-    this.isConnected = false,
-    this.connectedPeerIds = const [],
+    this.connectedPeers = const {},
+    this.selectedPeers = const {},
+    this.connectionStates = const {},
     this.wsUrl,
     this.clients = const [],
   });
 
   RoomActive copyWith({
-    PeerInfo? selectedPeer,
-    bool updateSelectedPeer = false,
     bool? isTalking,
     bool? peerTalking,
-    bool? isConnected,
-    List<String>? connectedPeerIds,
+    Set<String>? connectedPeers,
+    Set<String>? selectedPeers,
+    Map<String, ConnectionStatus>? connectionStates,
     String? wsUrl,
     List<PeerInfo>? clients,
-  }) => RoomActive(
-    isHost: isHost,
-    myId: myId,
-    selectedPeer: updateSelectedPeer ? selectedPeer : this.selectedPeer,
-    isTalking: isTalking ?? this.isTalking,
-    peerTalking: peerTalking ?? this.peerTalking,
-    isConnected: isConnected ?? this.isConnected,
-    connectedPeerIds: connectedPeerIds ?? this.connectedPeerIds,
-    wsUrl: wsUrl ?? this.wsUrl,
-    clients: clients ?? this.clients,
-  );
+  }) =>
+      RoomActive(
+        isHost: isHost,
+        myId: myId,
+        isTalking: isTalking ?? this.isTalking,
+        peerTalking: peerTalking ?? this.peerTalking,
+        connectedPeers: connectedPeers ?? this.connectedPeers,
+        selectedPeers: selectedPeers ?? this.selectedPeers,
+        connectionStates: connectionStates ?? this.connectionStates,
+        wsUrl: wsUrl ?? this.wsUrl,
+        clients: clients ?? this.clients,
+      );
 
   @override
   List<Object?> get props => [
-    isHost,
-    myId,
-    selectedPeer,
-    isTalking,
-    peerTalking,
-    isConnected,
-    connectedPeerIds,
-    wsUrl,
-    clients,
-  ];
+        isHost,
+        myId,
+        isTalking,
+        peerTalking,
+        connectedPeers,
+        selectedPeers,
+        connectionStates,
+        wsUrl,
+        clients,
+      ];
 }
 
 /// The remote side closed / dropped the session.

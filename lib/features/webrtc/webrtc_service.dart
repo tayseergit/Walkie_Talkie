@@ -180,11 +180,29 @@ class WebRtcService {
     _localStream?.getAudioTracks().forEach((t) => t.enabled = enabled);
   }
 
-  /// Un-mutes the mic: audio starts flowing to the remote peer.
-  void startTalking() => _setMicEnabled(true);
+  /// Updates which peers receive the local audio track.
+  Future<void> updateTalking(bool isTalking, Set<String> targetPeers) async {
+    _setMicEnabled(isTalking);
+    
+    final track = _localStream?.getAudioTracks().first;
+    if (track == null) return;
 
-  /// Mutes the mic: audio stops.
-  void stopTalking() => _setMicEnabled(false);
+    for (final entry in _peers.entries) {
+      final peerId = entry.key;
+      final pc = entry.value;
+
+      final senders = await pc.getSenders();
+      for (final sender in senders) {
+        if (sender.track?.kind == 'audio' || sender.track == null) {
+          if (isTalking && targetPeers.contains(peerId)) {
+            await sender.replaceTrack(track);
+          } else {
+            await sender.replaceTrack(null);
+          }
+        }
+      }
+    }
+  }
 
   Future<void> dispose() async {
     _setMicEnabled(false);

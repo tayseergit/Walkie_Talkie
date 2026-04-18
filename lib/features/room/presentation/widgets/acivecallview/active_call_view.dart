@@ -15,19 +15,32 @@ class ActiveCallView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cubit = context.read<RoomCubit>();
-    final selected = state.selectedPeer;
-    final peerName = selected?.name ?? 'No target selected';
-    final connectedCount = state.connectedPeerIds.length;
+    final connectedCount = state.connectedPeers.length;
     final isTalking = state.isTalking;
     final peerTalking = state.peerTalking;
-    final pttLocked = selected == null || !state.isConnected || peerTalking;
+    
+    final selectedCount = state.selectedPeers.length;
+    final activeConnectedCount = state.connectedPeers.intersection(state.selectedPeers).length;
+    final hasActiveConnected = activeConnectedCount > 0;
+    final pttLocked = !hasActiveConnected || peerTalking;
+
+    String statusText;
+    if (selectedCount == 0) {
+      statusText = 'Select at least one client to start call';
+    } else if (hasActiveConnected) {
+      statusText = peerTalking
+          ? 'Someone is talking...'
+          : 'Connected to $activeConnectedCount peer(s)';
+    } else {
+      statusText = 'Tap a peer to connect';
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
         backgroundColor: const Color(0xFF161B22),
         foregroundColor: Colors.white,
-        title: Text(peerName),
+        title: Text(state.isHost ? 'Host Room' : 'Joined Room'),
         actions: [
           TextButton.icon(
             onPressed: () => cubit.disconnect(),
@@ -121,9 +134,10 @@ class ActiveCallView extends StatelessWidget {
                     final client = state.clients[index];
                     return ClientCard(
                       client: client,
-                      selected: selected?.name == client.name,
-                      connected: state.connectedPeerIds.contains(client.name),
+                      selected: state.selectedPeers.contains(client.name),
+                      status: state.connectionStates[client.name] ?? ConnectionStatus.disconnected,
                       onTap: () => cubit.callPeer(client),
+                      onToggleSelect: (_) => cubit.togglePeerSelection(client.name),
                     );
                   },
                 ),
@@ -143,16 +157,10 @@ class ActiveCallView extends StatelessWidget {
                   ),
                 const SizedBox(height: 24),
                 Text(
-                  selected == null
-                      ? 'Select a client to start direct call'
-                      : state.isConnected
-                      ? (peerTalking
-                            ? '$peerName is talking...'
-                            : 'Connected to $peerName')
-                      : 'Tap $peerName to connect',
+                  statusText,
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: state.isConnected
+                    color: hasActiveConnected
                         ? Colors.greenAccent
                         : const Color(0xFF8B949E),
                     fontSize: 14,
@@ -190,7 +198,7 @@ class ActiveCallView extends StatelessWidget {
                 const SizedBox(height: 20),
                 Text(
                   pttLocked
-                      ? 'PTT disabled until selected peer is connected'
+                      ? 'PTT disabled until a selected peer connects'
                       : (isTalking ? 'Release to stop' : 'Hold to talk'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
